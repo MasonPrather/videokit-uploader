@@ -31,32 +31,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Models ---
 class PresignPutReq(BaseModel):
-    key: str
+    filename: str
     content_type: str = "video/mp4"
 
 class PresignGetReq(BaseModel):
-    key: str
+    key: str 
 
+# --- Endpoints ---
 @app.post("/presign-put")
 def presign_put(req: PresignPutReq):
     try:
-        expires = 60 * 10  # 10 minutes
+        expires = 60 * 10  # 10 min
+        key = f"recordings/{req.filename}"
+
         put_url = s3.generate_presigned_url(
             "put_object",
             Params={
                 "Bucket": R2_BUCKET,
-                "Key": req.key,
+                "Key": key,
                 "ContentType": req.content_type,
             },
             ExpiresIn=expires,
         )
         get_url = s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": R2_BUCKET, "Key": req.key},
+            Params={"Bucket": R2_BUCKET, "Key": key},
             ExpiresIn=expires,
         )
-        return {"key": req.key, "put_url": put_url, "get_url": get_url}
+        return {"key": key, "put_url": put_url, "get_url": get_url}
     except Exception as e:
         raise HTTPException(500, f"presign error: {e}")
 
@@ -72,3 +76,15 @@ def presign_get(req: PresignGetReq):
         return {"url": url, "expires_in": expires}
     except Exception as e:
         raise HTTPException(500, f"presign error: {e}")
+
+@app.get("/list-recordings")
+def list_recordings():
+    """List all objects under recordings/"""
+    try:
+        resp = s3.list_objects_v2(Bucket=R2_BUCKET, Prefix="recordings/")
+        items = []
+        for obj in resp.get("Contents", []):
+            items.append(obj["Key"])
+        return {"count": len(items), "keys": items}
+    except Exception as e:
+        raise HTTPException(500, f"list error: {e}")
